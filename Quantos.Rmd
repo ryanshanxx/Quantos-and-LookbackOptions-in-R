@@ -1,0 +1,250 @@
+---
+title: "Quantos"
+author: Xiaoxiang Shan
+class: Simulation Application
+# Valuing Quantos
+---
+```{r}
+library(readxl)
+df <- read_excel("DATA.xlsx")
+aapl <- df$AAPL
+aapl
+fx <- df$`EU/USD`
+fx
+ln_ret <- matrix(rep(0),length(df)-1)
+diff_fx <- matrix(rep(0),length(df)-1)
+
+for (i in 1:length(df)-1){
+  ln_ret[i] <- log(aapl[i+1]/aapl[i])
+  diff_fx[i] <- fx[i+1]-fx[i]
+}
+aapl_vol <- sd(ln_ret)
+fx_vol <- sd(diff_fx)
+corr_m <- cor(ln_ret,diff_fx)
+```
+
+```{r}
+MYUNIFORM <- function(inputvar)
+{
+  idum <- inputvar[1]
+  numran <- inputvar[2]
+  IM1 <- 2147483563
+  IM2 <- 2147483399
+  IMM1 <- IM1-1
+  IA1 <- 40014
+  IA2 <- 40692
+  IQ1 <- 53668 
+  IQ2 <- 52774
+  IR1 <- 12211
+  IR2 <- 3791
+  NTAB <- 32
+  NDIV <- as.integer(1+IMM1/NTAB)
+  AM=1.0/IM1
+  EPS=1.2e-7
+  RNMX=1.-EPS
+  iv=rep(0,NTAB)
+  idum2 <- 123456789
+  iy <- 0
+  ranx <- rep(0,numran)
+  icount <- 1
+  for (icount in 1:numran)
+  {
+    if (idum<=0)
+    {
+      idum<-max(-idum,1)
+      idum2 <- idum
+      j<-NTAB+8
+      while (j>0)
+      {
+        k <- as.integer(idum/IQ1)
+        idum<-IA1*(idum-k*IQ1)-k*IR1
+        if (idum<0){idum <- idum+IM1}
+        if(j<= NTAB){iv[j] <- idum}
+        j <- j-1
+      }
+      iy <- iv[1]
+    }
+    k<-as.integer(idum/IQ1)
+    idum<-IA1*(idum-k*IQ1)-k*IR1
+    if (idum<0) {idum <- idum+IM1}
+    k<-as.integer(idum2/IQ2)
+    idum2<-IA2*(idum2-k*IQ2)-k*IR2
+    if (idum2<0) {idum2 <- idum2+IM2}
+    j<-as.integer(iy/NDIV)+1
+    iy<-iv[j]-idum2
+    iv[j]<-idum
+    if (iy<1) {iy<-iy+IMM1}
+    ran2<-min(AM*iy,RNMX)
+    ranx[icount]<-ran2
+    icount<-icount+1
+  }
+  
+return(ranx)
+}
+```
+
+```{r}
+MYNORM <- function(ran_c)
+{
+  a0 <- 2.50662823884
+  a1 <- -18.61500062529
+  a2 <- 41.39119773534
+  a3 <- -25.44106049637
+
+  b0 <- -8.47351093090
+  b1 <- 23.08336743743
+  b2 <- -21.06224101826
+  b3 <- 3.13082909833
+  
+  c0 <- 0.3374754822726147
+  c1 <- 0.9761690190917186
+  c2 <- 0.1607979714918209
+  c3 <- 0.0276438810333863
+  c4 <- 0.0038405729373609
+  c5 <- 0.0003951896511919
+  c6 <- 0.0000321767881768
+  c7 <- 0.0000002888167364
+  c8 <- 0.0000003960315187
+  
+  jcount <- 1
+  numran <- inputvar[2]
+  ran_norm_c <- rep(0,numran)
+  while(jcount <= numran)
+  {
+    u <- ran_c[jcount]
+    y <- u-0.5
+    if(abs(y)<0.42)
+    {
+      r <- y*y
+      x <- y*(((a3*r+a2)*r+a1)*r+a0)/((((b3*r+b2)*r+b1)*r+b0)*r+1)
+    }
+    else
+    {
+      r <- u
+      if(y>0){r <- 1-u}
+      r <- log(-log(r))
+      x <- c0+r*(c1+r*(c2+r*(c3+r*(c4+r*(c5+r*(c6+r*(c7+r*c8)))))))
+      if(y<0){x <- -x}
+    }
+    ran_norm_c[jcount] <- x
+    jcount <- jcount+1
+  } 
+  return(ran_norm_c)
+}
+```
+
+```{r}
+seed <- 0
+numran <- 500000
+inputvar <- c(seed,numran)
+ran_uniform_c <- MYUNIFORM(inputvar)
+rand_norm1 <- MYNORM(ran_uniform_c)
+seed <- 1000
+numran <- 500000
+inputvar <- c(seed,numran)
+ran_uniform_c <- MYUNIFORM(inputvar)
+rand_norm2 <- MYNORM(ran_uniform_c)
+rand_eps1 <- rand_norm1
+rho_c <- corr_m
+rand_eps2 <- rho_c*rand_norm1+(sqrt(1-rho_c^2))*rand_norm2
+cor(rand_eps1,rand_eps2)
+```
+
+```{r}
+S0 <- 100
+rUSD <- 0.03
+VolStock <- aapl_vol
+T <- 3/12
+FX0 <- 1.1456
+rFX <- 0.02
+VolFX <- fx_vol
+KFX <- S0*FX0
+numpath <- 1000
+ST_Vals <- c(rep(0),numpath)
+ST_Rets <- c(rep(0),numpath)
+FX_Vals <- c(rep(0),numpath)
+FX_Rets <- c(rep(0),numpath)
+Quanto_Vals <- c(rep(0),numpath)
+jcount <- 1
+while(jcount <= numpath)
+{
+  ST <- S0*(exp((rUSD-0.5*(VolStock^2))*T+VolStock*sqrt(T)*rand_eps1[jcount]))
+  ST_Vals[jcount] <- ST
+  ST_Rets[jcount] <- log(ST_Vals[jcount]/50)
+  FX <- FX0*(exp((rFX-rUSD-0.5*(VolFX^2))*T+VolFX*sqrt(T)*rand_eps2[jcount]))
+  FX_Vals[jcount] <- FX
+  FX_Rets[jcount] <- log(FX_Vals[jcount]/FX0)
+  Quanto <- max(ST*FX-KFX,0)
+  Quanto_Vals[jcount] <- Quanto
+  jcount = jcount+1
+}
+
+mean(Quanto_Vals*exp(-rFX*T))
+sd(Quanto_Vals*exp(-rFX*T))
+```
+
+```{r}
+hist(FX_Rets, breaks=20,freq=F)
+FXRet_Vol <- VolFX*sqrt(T)
+rFXm <- exp(rFX*T)-1
+curve(dnorm(x,mean=rFXm,sd=FXRet_Vol),from=-4,to=4,add=TRUE,lwd=2)
+
+hist(ST_Rets,breaks=20,freq=F)
+Vol_Ret <- VolStock*sqrt(T)
+rUSDm <- exp(rUSD*T)-1
+curve(dnorm(x,mean=rUSDm,sd=Vol_Ret),from=-4,to=4,add=TRUE,lwd=2)
+
+CI_low = mean(Quanto_Vals[1:numpath])+qnorm(0.05)*sd(Quanto_Vals[1:numpath])
+CI_high = mean(Quanto_Vals[1:numpath])-qnorm(0.05)*sd(Quanto_Vals[1:numpath])
+sprintf("Quanto Confidence Interval: [%s, %s]", CI_low,CI_high)
+```
+
+```{r}
+S0 <- 100
+rUSD <- 0.03
+VolStock <- aapl_vol
+T <- 3/12
+FX0 <- 1.1456
+rFX <- 0.02
+VolFX <- fx_vol
+KFX <- S0*FX0
+numpath <- 10000
+ST_Vals <- c(rep(0),numpath)
+ST_Rets <- c(rep(0),numpath)
+FX_Vals <- c(rep(0),numpath)
+FX_Rets <- c(rep(0),numpath)
+Quanto_Vals <- c(rep(0),numpath)
+jcount <- 1
+while(jcount <= numpath)
+{
+  ST <- S0*(exp((rUSD-0.5*(VolStock^2))*T+VolStock*sqrt(T)*rand_eps1[jcount]))
+  ST_Vals[jcount] <- ST
+  ST_Rets[jcount] <- log(ST_Vals[jcount]/50)
+  FX <- FX0*(exp((rFX-rUSD-0.5*(VolFX^2))*T+VolFX*sqrt(T)*rand_eps2[jcount]))
+  FX_Vals[jcount] <- FX
+  FX_Rets[jcount] <- log(FX_Vals[jcount]/FX0)
+  Quanto <- max(ST*FX-KFX,0)
+  Quanto_Vals[jcount] <- Quanto
+  jcount = jcount+1
+}
+
+mean(Quanto_Vals*exp(-rFX*T))
+sd(Quanto_Vals*exp(-rFX*T))
+```
+
+```{r}
+hist(FX_Rets, breaks=20,freq=F)
+FXRet_Vol <- VolFX*sqrt(T)
+rFXm <- exp(rFX*T)-1
+curve(dnorm(x,mean=rFXm,sd=FXRet_Vol),from=-4,to=4,add=TRUE,lwd=2)
+
+hist(ST_Rets,breaks=20,freq=F)
+Vol_Ret <- VolStock*sqrt(T)
+rUSDm <- exp(rUSD*T)-1
+curve(dnorm(x,mean=rUSDm,sd=Vol_Ret),from=-4,to=4,add=TRUE,lwd=2)
+
+CI_low = mean(Quanto_Vals[1:numpath])+qnorm(0.05)*sd(Quanto_Vals[1:numpath])
+CI_high = mean(Quanto_Vals[1:numpath])-qnorm(0.05)*sd(Quanto_Vals[1:numpath])
+sprintf("Quanto Confidence Interval: [%s, %s]", CI_low,CI_high)
+```
+
